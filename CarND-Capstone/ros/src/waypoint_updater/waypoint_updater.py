@@ -21,7 +21,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 10 # Number of waypoints we will publish. You can change this number
 
 
 class WaypointUpdater(object):
@@ -33,19 +33,34 @@ class WaypointUpdater(object):
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
 
+        self.lane = Lane()
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
+        self.look_back_points = 3
 
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
-        pass
+        if self.waypoints is None:
+            pass
+        else:
+            # rospy.logwarn(self.waypoints.waypoints[0])
+            self.pose = msg.pose
+            waypoints = self.waypoints.waypoints
+            self.lane.header.stamp = rospy.Time.now()
+            init_point = self.closest_waypoints(self.pose, waypoints)
+            temp_waypoints = waypoints + waypoints[:LOOKAHEAD_WPS]
+            self.lane.waypoints = temp_waypoints[init_point-self.look_back_points: init_point+LOOKAHEAD_WPS]
+            
+            self.final_waypoints_pub.publish(self.lane)
+        
 
-    def waypoints_cb(self, waypoints):
+    def waypoints_cb(self, Lane):
         # TODO: Implement
+        self.waypoints = Lane
         pass
 
     def traffic_cb(self, msg):
@@ -62,13 +77,28 @@ class WaypointUpdater(object):
     def set_waypoint_velocity(self, waypoints, waypoint, velocity):
         waypoints[waypoint].twist.twist.linear.x = velocity
 
-    def distance(self, waypoints, wp1, wp2):
-        dist = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
-        for i in range(wp1, wp2+1):
-            dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
-            wp1 = i
-        return dist
+    def closest_waypoints(self, pose, waypoints):
+        c_waypoint = 0
+        min_dist = self.distance(pose.position, waypoints[0].pose.pose.position)
+        for i, point in enumerate(waypoints):
+            dist = self.distance(pose.position, point.pose.pose.position)
+            if dist < min_dist:
+                c_waypoint = i
+                min_dist = dist
+        return c_waypoint
+
+    def distance(self, point1, point2):
+        dx = point1.x - point2.x
+        dy = point1.y - point2.y
+        return math.sqrt(dx*dx+dy*dy)
+
+    # def distance(self, waypoints, wp1, wp2):
+    #     dist = 0
+    #     dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+    #     for i in range(wp1, wp2+1):
+    #         dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
+    #         wp1 = i
+    #     return dist
 
 
 if __name__ == '__main__':

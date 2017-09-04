@@ -3,10 +3,14 @@
 import rospy
 from std_msgs.msg import Bool
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped
+from styx_msgs.msg import Lane, Waypoint
 import math
+import numpy as np
+import tf
 
 from twist_controller import Controller
+from pid import PID 
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -53,12 +57,43 @@ class DBWNode(object):
         self.brake_pub = rospy.Publisher('/vehicle/brake_cmd',
                                          BrakeCmd, queue_size=1)
 
+        min_speed = 0.
+
+
         # TODO: Create `TwistController` object
         # self.controller = TwistController(<Arguments you wish to provide>)
+        self.Tcontroller = Controller(wheel_base = wheel_base, 
+                                      steer_ratio = steer_ratio, 
+                                      min_speed = min_speed, 
+                                      max_lat_accel = max_lat_accel, 
+                                      max_steer_angle = max_steer_angle)
+
+
+        self.velocity_ref = 20.
+        self.final_waypoints = None
+        self.current_pose = None
+        self.cte = 0
+        self.vel_control=0.
+        self.throttle = 0
+        self.brake = 0
+        self.steering = 0
+        self.time_current = 0
+        self.time_previous = 0
+        self.time_delta = 0
+
+        self.velocity_pid = PID(kp=0.1, ki=0.0, kd=0.)
+        self.steering_pid = PID(kp=10., ki=0.0, kd=0.01, mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
+        rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_vel_cb, queue_size=1)
+        rospy.Subscriber('/current_pose', PoseStamped, self.current_pose_cb, queue_size=1)
+        rospy.Subscriber('/final_waypoints', Lane, self.final_waypoints_cb)
+
 
         self.loop()
+
+
 
     def loop(self):
         rate = rospy.Rate(50) # 50Hz
@@ -72,6 +107,26 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
+            
+            if self.final_waypoints is not None:
+                self.time_current = rospy.get_rostime().secs + rospy.get_rostime().nsecs/1000000000.
+                self.time_delta = self.time_current-self.time_previous
+                self.time_previous = self.time_current
+                self.cte = self.cross_track_error(self.final_waypoints, self.current_pose)
+                self.steering = self.steering_pid.step(self.cte, self.time_delta)
+                self.vel_control = self.velocity_pid.step(-self.current_velocity+self.velocity_ref, self.time_delta)
+            if self.vel_control>0:         
+                self.throttle = self.vel_control
+                self.brake = 0
+            else:
+                self.throttle = 0
+                self.brake = abs(self.vel_control)
+
+            rospy.logwarn(self.vel_control)
+            # rospy.logwarn(self.steering)
+            # rospy.logwarn(self.cte)
+            # if <dbw is enabled>:
+            self.publish(self.throttle, self.brake, self.steering)
             rate.sleep()
 
     def publish(self, throttle, brake, steer):
@@ -92,6 +147,50 @@ class DBWNode(object):
         bcmd.pedal_cmd = brake
         self.brake_pub.publish(bcmd)
 
+    def cross_track_error(self, waypoints, pose):
+        # get future waypoints
+        ptsX = [point.pose.pose.position.x for point in waypoints]
+        ptsY = [point.pose.pose.position.y for point in waypoints]
+        # get vehicle yaw angle, Quaternion to Euler
+        quaternion = (pose.orientation.x,
+                      pose.orientation.y,
+                      pose.orientation.z,
+                      pose.orientation.w)
+        yawV = tf.transformations.euler_from_quaternion(quaternion)[2]
+
+        # transfer to vehicle coordinates
+        px = pose.position.x
+        py = pose.position.y
+        ptsXV = []
+        ptsYV = []
+        for i in range(len(ptsX)):
+            temp_x = (ptsY[i]-py)*np.sin(yawV) - (px-ptsX[i])*np.cos(yawV)
+            temp_y = (ptsY[i]-py)*np.cos(yawV) + (px-ptsX[i])*np.sin(yawV)
+            ptsXV += [temp_x]
+            ptsYV += [temp_y]
+        coeffs = np.polyfit(ptsXV, ptsYV, 3)
+        # rospy.logwarn(coeffs)
+        # cte = 0
+        # for i in range(len(coeffs)):
+        #     cte += coeffs[i]*(2**i)
+        cte = np.polyval(coeffs, self.current_velocity*0.44704*self.time_delta)
+
+        return cte
+
+    def dbw_cb(self, msg):
+        if msg.data:
+            self.dbw_enabled = True
+        else:
+            self.dbw_enabled = False
+
+    def current_vel_cb(self, msg):
+        self.current_velocity = msg.twist.linear.x
+
+    def current_pose_cb(self, msg):
+        self.current_pose = msg.pose 
+
+    def final_waypoints_cb(self, msg):
+        self.final_waypoints = msg.waypoints 
 
 if __name__ == '__main__':
     DBWNode()
