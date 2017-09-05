@@ -70,7 +70,7 @@ class DBWNode(object):
 
 
         self.current_velocity = 0.
-        self.velocity_ref = 10.
+        self.velocity_ref = 20.
         self.final_waypoints = None
         self.current_pose = None
         self.cte = 0
@@ -83,7 +83,7 @@ class DBWNode(object):
         self.time_delta = 0
 
         self.velocity_pid = PID(kp=1., ki=0.01, kd=0.)
-        self.steering_pid = PID(kp=10., ki=0.0, kd=0., mn=-max_steer_angle, mx=max_steer_angle)
+        self.steering_pid = PID(kp=0.2, ki=0.005, kd=0.5, mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
@@ -122,7 +122,7 @@ class DBWNode(object):
             # else:
             #     self.throttle = 0
             #     self.brake = abs(self.vel_control)*20000
-                if self.current_velocity < 10.:
+                if self.current_velocity < 20.:
                     self.throttle = 2.
                     self.brake = 0.
                 else:
@@ -175,6 +175,7 @@ class DBWNode(object):
             temp_y = (ptsY[i]-py)*np.cos(yawV) + (px-ptsX[i])*np.sin(yawV)
             ptsXV += [temp_x]
             ptsYV += [temp_y]
+        rospy.logwarn(ptsXV)
         coeffs = np.polyfit(ptsXV, ptsYV, 5)[::-1]
         cte = 0
         for i in range(len(coeffs)):
