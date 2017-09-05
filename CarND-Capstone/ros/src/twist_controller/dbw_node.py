@@ -83,7 +83,7 @@ class DBWNode(object):
         self.time_delta = 0
 
         self.velocity_pid = PID(kp=1., ki=0.01, kd=0.)
-        self.steering_pid = PID(kp=0.2, ki=0.005, kd=0.5, mn=-max_steer_angle, mx=max_steer_angle)
+        self.steering_pid = PID(kp=0.2, ki=0.005, kd=1., mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
@@ -122,7 +122,7 @@ class DBWNode(object):
             # else:
             #     self.throttle = 0
             #     self.brake = abs(self.vel_control)*20000
-                if self.current_velocity < 20.:
+                if self.current_velocity < 70.:
                     self.throttle = 2.
                     self.brake = 0.
                 else:
