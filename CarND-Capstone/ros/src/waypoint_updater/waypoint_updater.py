@@ -21,8 +21,9 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 10 # Number of waypoints we will publish. You can change this number
-
+LOOKAHEAD_WPS = 5 # Number of waypoints we will publish. You can change this number
+LOOKBACK_WPS = 5
+DISTANCE = 100
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -32,13 +33,13 @@ class WaypointUpdater(object):
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        self.waypoints = None
 
         self.lane = Lane()
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
-        self.look_back_points = 3
 
         rospy.spin()
 
@@ -53,8 +54,12 @@ class WaypointUpdater(object):
             self.lane.header.stamp = rospy.Time.now()
             init_point = self.closest_waypoints(self.pose, waypoints)
             temp_waypoints = waypoints + waypoints[:LOOKAHEAD_WPS]
-            self.lane.waypoints = temp_waypoints[init_point-self.look_back_points: init_point+LOOKAHEAD_WPS]
-            
+            # self.lane.waypoints = temp_waypoints[init_point-LOOKBACK_WPS: init_point+LOOKAHEAD_WPS]
+            self.lane.waypoints = []
+            for point in temp_waypoints[init_point-LOOKBACK_WPS: init_point+LOOKAHEAD_WPS]:
+                if self.distance(self.pose.position, point.pose.pose.position) < DISTANCE:
+                    self.lane.waypoints += [point]
+
             self.final_waypoints_pub.publish(self.lane)
         
 
@@ -80,11 +85,14 @@ class WaypointUpdater(object):
     def closest_waypoints(self, pose, waypoints):
         c_waypoint = 0
         min_dist = self.distance(pose.position, waypoints[0].pose.pose.position)
+        N = 0
         for i, point in enumerate(waypoints):
+            N += 1
             dist = self.distance(pose.position, point.pose.pose.position)
             if dist < min_dist:
                 c_waypoint = i
                 min_dist = dist
+        rospy.logwarn(N)
         return c_waypoint
 
     def distance(self, point1, point2):

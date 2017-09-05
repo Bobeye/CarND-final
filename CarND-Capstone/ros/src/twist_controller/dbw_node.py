@@ -69,7 +69,8 @@ class DBWNode(object):
                                       max_steer_angle = max_steer_angle)
 
 
-        self.velocity_ref = 20.
+        self.current_velocity = 0.
+        self.velocity_ref = 10.
         self.final_waypoints = None
         self.current_pose = None
         self.cte = 0
@@ -81,8 +82,8 @@ class DBWNode(object):
         self.time_previous = 0
         self.time_delta = 0
 
-        self.velocity_pid = PID(kp=0.1, ki=0.0, kd=0.)
-        self.steering_pid = PID(kp=10., ki=0.0, kd=0.01, mn=-max_steer_angle, mx=max_steer_angle)
+        self.velocity_pid = PID(kp=1., ki=0.01, kd=0.)
+        self.steering_pid = PID(kp=10., ki=0.0, kd=0., mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
@@ -115,14 +116,20 @@ class DBWNode(object):
                 self.cte = self.cross_track_error(self.final_waypoints, self.current_pose)
                 self.steering = self.steering_pid.step(self.cte, self.time_delta)
                 self.vel_control = self.velocity_pid.step(-self.current_velocity+self.velocity_ref, self.time_delta)
-            if self.vel_control>0:         
-                self.throttle = self.vel_control
-                self.brake = 0
-            else:
-                self.throttle = 0
-                self.brake = abs(self.vel_control)
+            # if self.vel_control>0:         
+            #     self.throttle = self.vel_control
+            #     self.brake = 0
+            # else:
+            #     self.throttle = 0
+            #     self.brake = abs(self.vel_control)*20000
+                if self.current_velocity < 10.:
+                    self.throttle = 2.
+                    self.brake = 0.
+                else:
+                    self.throttle = 0.
+                    self.brake = 0.
 
-            rospy.logwarn(self.vel_control)
+            
             # rospy.logwarn(self.steering)
             # rospy.logwarn(self.cte)
             # if <dbw is enabled>:
@@ -168,13 +175,12 @@ class DBWNode(object):
             temp_y = (ptsY[i]-py)*np.cos(yawV) + (px-ptsX[i])*np.sin(yawV)
             ptsXV += [temp_x]
             ptsYV += [temp_y]
-        coeffs = np.polyfit(ptsXV, ptsYV, 3)
-        # rospy.logwarn(coeffs)
-        # cte = 0
-        # for i in range(len(coeffs)):
-        #     cte += coeffs[i]*(2**i)
-        cte = np.polyval(coeffs, self.current_velocity*0.44704*self.time_delta)
-
+        coeffs = np.polyfit(ptsXV, ptsYV, 5)[::-1]
+        cte = 0
+        for i in range(len(coeffs)):
+            cte += coeffs[i]*(self.current_velocity*0.44704*self.time_delta**i)
+        # cte = np.polyval(coeffs, self.current_velocity*0.44704*self.time_delta)
+        # rospy.logwarn(cte)
         return cte
 
     def dbw_cb(self, msg):
