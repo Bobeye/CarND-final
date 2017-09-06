@@ -23,7 +23,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
-LOOKBACK_WPS = 20
+LOOKBACK_WPS = 5
 DISTANCE = 30
 
 class WaypointUpdater(object):

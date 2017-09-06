@@ -82,8 +82,8 @@ class DBWNode(object):
         self.time_previous = 0
         self.time_delta = 0
 
-        self.velocity_pid = PID(kp=1., ki=0.01, kd=0.)
-        self.steering_pid = PID(kp=0.2, ki=0.005, kd=1., mn=-max_steer_angle, mx=max_steer_angle)
+        self.velocity_pid = PID(kp=1., ki=0., kd=0.1)
+        self.steering_pid = PID(kp=0.03, ki=0., kd=0.1, mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
@@ -97,7 +97,7 @@ class DBWNode(object):
 
 
     def loop(self):
-        rate = rospy.Rate(50) # 50Hz
+        rate = rospy.Rate(20) # 20Hz
         while not rospy.is_shutdown():
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
             # You should only publish the control commands if dbw is enabled
@@ -115,19 +115,25 @@ class DBWNode(object):
                 self.time_previous = self.time_current
                 self.cte = self.cross_track_error(self.final_waypoints, self.current_pose)
                 self.steering = self.steering_pid.step(self.cte, self.time_delta)
-                self.vel_control = self.velocity_pid.step(-self.current_velocity+self.velocity_ref, self.time_delta)
-            # if self.vel_control>0:         
-            #     self.throttle = self.vel_control
-            #     self.brake = 0
-            # else:
-            #     self.throttle = 0
-            #     self.brake = abs(self.vel_control)*20000
-                if self.current_velocity < 70.:
-                    self.throttle = 2.
-                    self.brake = 0.
-                else:
-                    self.throttle = 0.
-                    self.brake = 0.
+                self.vel_control = self.velocity_pid.step(self.velocity_ref-self.current_velocity, self.time_delta)
+            if self.vel_control>0 and self.vel_control<30:         
+                self.throttle = self.vel_control
+                self.brake = 0
+            elif self.vel_control <= 0:
+                self.throttle = 0
+                self.brake = abs(self.vel_control)*20000
+            else:
+                self.throttle = 20.
+                self.brake = 0
+
+            rospy.logwarn(self.vel_control)
+                # self.throttle = 2.
+                # if self.current_velocity < 30.:
+                #     self.throttle += 0.5
+                #     self.brake = 0.
+                # else:
+                #     self.throttle = 0.
+                #     self.brake = 0.
 
             
             # rospy.logwarn(self.steering)
@@ -175,11 +181,12 @@ class DBWNode(object):
             temp_y = (ptsY[i]-py)*np.cos(yawV) + (px-ptsX[i])*np.sin(yawV)
             ptsXV += [temp_x]
             ptsYV += [temp_y]
-        rospy.logwarn(ptsXV)
-        coeffs = np.polyfit(ptsXV, ptsYV, 5)[::-1]
+        # rospy.logwarn(ptsXV)
+        coeffs = np.polyfit(ptsXV, ptsYV, 3)[::-1]
         cte = 0
-        for i in range(len(coeffs)):
-            cte += coeffs[i]*(self.current_velocity*0.44704*self.time_delta**i)
+        for t in range(10):
+            for i in range(len(coeffs)):
+                cte += coeffs[i]*((self.current_velocity*0.44704*t*self.time_delta)**i)
         # cte = np.polyval(coeffs, self.current_velocity*0.44704*self.time_delta)
         # rospy.logwarn(cte)
         return cte
