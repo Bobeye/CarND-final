@@ -91,9 +91,9 @@ class DBWNode(object):
         self.time_previous = 0
         self.time_delta = 0
 
-        self.velocity_pid = PID(kp=1000., ki=0., kd=0., mn=-10000, mx = 10000.)
+        self.velocity_pid = PID(kp=0.2, ki=0.0, kd=0.05, mn=-1, mx = 1.)
 
-        self.steering_pid = PID(kp=0.05, ki=0., kd=0.05, mn=-max_steer_angle, mx=max_steer_angle)
+        self.steering_pid = PID(kp=0.08, ki=0., kd=0.03, mn=-max_steer_angle, mx=max_steer_angle)
 
         # TODO: Subscribe to all the topics you need to
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb)
@@ -101,7 +101,6 @@ class DBWNode(object):
         rospy.Subscriber('/current_pose', PoseStamped, self.current_pose_cb, queue_size=1)
         rospy.Subscriber('/final_waypoints', Lane, self.final_waypoints_cb)
 
-        self.N = 0
 
         self.loop()
 
@@ -126,18 +125,24 @@ class DBWNode(object):
 
             if self.dbw_enabled:
                 if self.final_waypoints is not None:
+
+
                     self.time_current = rospy.get_rostime().secs + rospy.get_rostime().nsecs/1000000000.
                     self.time_delta = self.time_current-self.time_previous
                     self.time_previous = self.time_current
-                    self.cte = self.cross_track_error(self.final_waypoints, self.current_pose)
-                    self.steering = self.steering_pid.step(self.cte, self.time_delta)
                     
                     self.past_velocity += [self.current_velocity]
                     if len(self.past_velocity) == self.memory_velocity:
                         del self.past_velocity[0]
 
+                    self.cte = self.cross_track_error(self.final_waypoints, self.current_pose)
+                    self.steering = self.steering_pid.step(self.cte, self.time_delta)
+                    
+                    
+
                     if self.current_velocity < self.velocity_ref:
-                        self.velocity_target = max(1 ,max(self.past_velocity) + self.accel_limit * self.time_delta)
+                        # self.velocity_target = max(1 ,max(self.past_velocity) + self.accel_limit * self.time_delta)
+                        self.velocity_target = self.velocity_ref
                     else:
                         self.velocity_target = min(self.velocity_ref, self.current_velocity + self.decel_limit * self.time_delta) 
                     self.cruise_control = self.velocity_pid.step(self.velocity_target-self.current_velocity, self.time_delta)
@@ -146,7 +151,7 @@ class DBWNode(object):
                     self.brake = 0
                 else:
                     self.throttle = 0
-                    self.brake = abs(self.cruise_control)
+                    self.brake = abs(self.cruise_control)*20000000.
 
             else:
                 self.velocity_pid.reset()
@@ -154,30 +159,14 @@ class DBWNode(object):
                 self.past_velocity = []
             
             
-            logstr = "throttle: " + str(self.throttle) + " ,brake: " + str(self.brake)
+            # logstr = "throttle: " + str(self.throttle) + " ,brake: " + str(self.brake)
+            # rospy.logwarn(logstr)
+            # logstr = "cv: " + str(self.current_velocity) + " ,rv: " + str(self.velocity_target)
+            # rospy.logwarn(logstr)
+
+            logstr = str(self.velocity_target-self.current_velocity) + " ,S: " + str(self.steering) + " ,T: " + str(self.throttle) + " ,B: " + str(self.brake)
+            rospy.logwarn(self.cruise_control)
             rospy.logwarn(logstr)
-            # rospy.logwarn(self.cruise_control)
-                # self.throttle = 2.
-                # if self.current_velocity < 30.:
-                #     self.throttle += 0.5
-                #     self.brake = 0.
-                # else:
-                #     self.throttle = 0.
-                #     self.brake = 0.
-
-            
-            # rospy.logwarn(self.steering)
-            # rospy.logwarn(self.cte)
-            # if <dbw is enabled>:
-
-            # if self.N < 1000:
-            #     self.throttle = 10000000
-            #     self.brake = 0.
-            # else:
-            #     self.throttle = 0
-            #     self.brake = 20000
-            # self.N += 1
-            # rospy.logwarn(self.brake)
 
             self.publish(self.throttle, self.brake, self.steering)
             rate.sleep()
@@ -221,18 +210,11 @@ class DBWNode(object):
             temp_y = (ptsY[i]-py)*np.cos(yawV) + (px-ptsX[i])*np.sin(yawV)
             ptsXV += [temp_x]
             ptsYV += [temp_y]
-        # rospy.logwarn(ptsXV)
-        # coeffs = np.polyfit(ptsXV, ptsYV, 5)[::-1]
-        # cte = 0
-        # for t in range(10):
-        #     for i in range(len(coeffs)):
-        #         cte += coeffs[i]*((self.current_velocity*0.44704*t*self.time_delta)**i)
-        
         spl = UnivariateSpline(ptsXV, ptsYV)
         # spl = CubicSpline(ptsXV, ptsYV)
         cte = 0
         for t in range(3):
-            cte += spl(self.current_velocity*0.44704*t*self.time_delta)
+            cte += spl(np.mean(np.array(self.past_velocity))*0.44704*t*self.time_delta)
         return cte
 
     def dbw_cb(self, msg):
