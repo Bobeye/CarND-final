@@ -164,9 +164,9 @@ class DBWNode(object):
             # logstr = "cv: " + str(self.current_velocity) + " ,rv: " + str(self.velocity_target)
             # rospy.logwarn(logstr)
 
-            logstr = str(self.velocity_target-self.current_velocity) + " ,S: " + str(self.steering) + " ,T: " + str(self.throttle) + " ,B: " + str(self.brake)
-            rospy.logwarn(self.cruise_control)
-            rospy.logwarn(logstr)
+            # logstr = str(self.velocity_target-self.current_velocity) + " ,S: " + str(self.steering) + " ,T: " + str(self.throttle) + " ,B: " + str(self.brake)
+            # rospy.logwarn(self.cruise_control)
+            # rospy.logwarn(logstr)
 
             self.publish(self.throttle, self.brake, self.steering)
             rate.sleep()
